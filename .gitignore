@@ -1,0 +1,9 @@
+# Ignorar arquivos de token salvos
+strava_tokens.json
+google_fit_tokens.json
+
+# Ignorar nosso arquivo de configuração principal
+config.py
+
+# Ignorar pastas de cache do Python
+__pycache__/

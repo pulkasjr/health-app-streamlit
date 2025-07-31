@@ -24,7 +24,7 @@ STRAVA_TOKEN_FILE = "strava_tokens.json"
 
 # --- Credenciais do Google ---
 GOOGLE_CLIENT_ID = "423426384359-m0pr10393ve0seul953bh63lhobqgl2v.apps.googleusercontent.com"
-GOOGLE_CLIENT_SECRET = " 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"
+GOOGLE_CLIENT_SECRET = "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"
 # --- Endereço para o site online NO RENDER ---
 GOOGLE_REDIRECT_URI = "https://health-app-streamlit.onrender.com"
 GOOGLE_TOKEN_FILE = "google_fit_tokens.json"

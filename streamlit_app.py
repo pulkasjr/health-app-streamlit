@@ -17,7 +17,7 @@ from utils.fit_tokens import obter_token_valido as obter_token_fit, salvar_token
 # ----- CONFIGURAÇÃO CENTRALIZADA (COLOQUE SUAS CREDENCIAIS CORRETAS AQUI) -----
 # --- Credenciais do Strava ---
 STRAVA_CLIENT_ID = "168833"
-STRAVA_CLIENT_SECRET = "1d3baa5de899906ac705feb8833ffdba6d0729a2"
+STRAVA_CLIENT_SECRET = "6e774fa2c3c62214ea196fbcdf8162a00e58a882"
 # --- Endereço para o site online NO RENDER ---
 STRAVA_REDIRECT_URI = "https://health-app-streamlit.onrender.com"
 STRAVA_TOKEN_FILE = "strava_tokens.json"

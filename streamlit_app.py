@@ -1,4 +1,4 @@
-# streamlit_app.py
+# streamlit_app.py (VERSÃO FINAL PARA RENDER)
 import streamlit as st
 import sqlite3
 import random
@@ -16,11 +16,13 @@ from utils.dados_google_fit import obter_token_valido as obter_token_fit, salvar
 from utils.dados_alimentos import buscar_info_alimento, gerar_dicas_nutricionais
 
 # ----- CONFIGURAÇÃO CENTRALIZADA (COLOQUE SUAS CREDENCIAIS CORRETAS AQUI) -----
+# --- Credenciais do Strava ---
 STRAVA_CLIENT_ID = "168833"
 STRAVA_CLIENT_SECRET = "6e774fa2c3c62214ea196fbcdf8162a00e58a882"
-SSTRAVA_REDIRECT_URI = "https://health-app-streamlit.onrender.com"
+STRAVA_REDIRECT_URI = "https://health-app-streamlit.onrender.com"
 STRAVA_TOKEN_FILE = "strava_tokens.json"
 
+# --- Credenciais do Google ---
 GOOGLE_CLIENT_ID = "423426384359-m0pr10393ve0seul953bh63lhobqgl2v.apps.googleusercontent.com"
 GOOGLE_CLIENT_SECRET = "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"
 GOOGLE_REDIRECT_URI = "https://health-app-streamlit.onrender.com"
@@ -33,7 +35,7 @@ GOOGLE_SCOPES = [
     "https://www.googleapis.com/auth/fitness.sleep.read"
 ]
 
-# --- Construção dos objetos de configuração ---
+# --- Construção dos objetos de configuração (LOGO APÓS AS CREDENCIAIS) ---
 client_config_google = {"web": {"client_id": GOOGLE_CLIENT_ID, "client_secret": GOOGLE_CLIENT_SECRET, "auth_uri": "https://accounts.google.com/o/oauth2/auth", "token_uri": GOOGLE_TOKEN_URI, "redirect_uris": [GOOGLE_REDIRECT_URI]}}
 STRAVA_AUTH_URL = (f"https://www.strava.com/oauth/authorize?client_id={STRAVA_CLIENT_ID}&response_type=code&redirect_uri={STRAVA_REDIRECT_URI}&approval_prompt=force&scope=read_all,activity:read_all")
 STRAVA_TOKEN_URL = "https://www.strava.com/oauth/token"
@@ -58,10 +60,15 @@ def salvar_dado(peso, altura, imc):
     conn.close()
 
 def buscar_dados_locais():
-    conn = sqlite3.connect("health_data.db")
-    df = pd.read_sql_query("SELECT * FROM health_records ORDER BY timestamp DESC", conn, parse_dates=["timestamp"])
-    conn.close()
-    return df
+    # Adicionamos um try-except para o caso do banco de dados ainda não existir no servidor
+    try:
+        conn = sqlite3.connect("health_data.db")
+        df = pd.read_sql_query("SELECT * FROM health_records ORDER BY timestamp DESC", conn, parse_dates=["timestamp"])
+        conn.close()
+        return df
+    except sqlite3.Error as e:
+        print(f"Erro no banco de dados: {e}")
+        return pd.DataFrame() # Retorna um DataFrame vazio em caso de erro
 
 def classificar_imc(imc):
     if imc < 18.5: return ("Abaixo do Peso", "imc-abaixo")
@@ -101,8 +108,7 @@ if auth_code and 'auth_flow' not in st.session_state:
                 salvar_tokens_strava(response.json(), STRAVA_TOKEN_FILE)
                 st.success("Strava autorizado com sucesso! Recarregando...")
                 time.sleep(1); st.query_params.clear()
-        except Exception as e:
-            st.error(f"Erro na autorização do Strava: {e}")
+        except Exception as e: st.error(f"Erro na autorização do Strava: {e}")
             
     elif scope_param and "googleapis.com" in scope_param:
         try:
@@ -114,8 +120,7 @@ if auth_code and 'auth_flow' not in st.session_state:
                 salvar_tokens_fit(tokens, GOOGLE_TOKEN_FILE)
                 st.success("Google Fit autorizado com sucesso! Recarregando...")
                 time.sleep(1); st.query_params.clear()
-        except Exception as e:
-            st.error(f"Erro na autorização do Google: {e}")
+        except Exception as e: st.error(f"Erro na autorização do Google: {e}")
 
 # --- BARRA LATERAL (SIDEBAR) ---
 st.sidebar.title("VidaCheck Saúde")
@@ -149,7 +154,6 @@ if token_google:
 # --- Abas ---
 tabs = st.tabs(["🧮 IMC & Glicemia", "🧍 Google Fit", "🚴 Strava", "🥗 Alimentos"])
 
-# --- Aba IMC & Glicemia ---
 with tabs[0]:
     st.header("🧮 Meu Histórico Manual")
     with st.expander("➕ Adicionar Novo Registro de Peso e Altura"):
@@ -188,7 +192,7 @@ with tabs[0]:
     if uploaded_file is not None:
         try:
             coluna_data = "Data"
-            coluna_glicemia = "Glicemia" # Ajuste o nome exato da coluna do seu arquivo
+            coluna_glicemia = "Glicemia" 
             df_glicemia = pd.read_csv(uploaded_file, sep=';', decimal=',')
             st.success("Arquivo carregado com sucesso!")
             df_glicemia = df_glicemia.rename(columns={coluna_data: 'timestamp', coluna_glicemia: 'glicemia'})
@@ -203,7 +207,6 @@ with tabs[0]:
         except Exception as e:
             st.error(f"Ocorreu um erro ao processar o arquivo: {e}")
 
-# --- Aba Google Fit ---
 with tabs[1]:
     st.header("🧍 Dados do Google Fit (Últimos 7 dias)")
     if token_google:
@@ -242,7 +245,6 @@ with tabs[1]:
     else:
         st.warning("Conecte sua conta do Google Fit na barra lateral para ver os dados automáticos.")
 
-# --- Aba Strava ---
 with tabs[2]:
     st.header("🚴 Atividades do Strava")
     if token_strava:
@@ -267,7 +269,6 @@ with tabs[2]:
     else:
         st.warning("Conecte sua conta do Strava na barra lateral para ver suas atividades.")
 
-# --- Aba Alimentos ---
 with tabs[3]:
     st.header("🥗 Consulta de Alimentos (Open Food Facts)")
     alimento = st.text_input("Digite o nome de um alimento para buscar:")
@@ -279,14 +280,13 @@ with tabs[3]:
                 st.markdown(f"### 🥣 {dados['nome']}")
                 col1, col2 = st.columns([1, 2])
                 with col1:
-                    if dados["imagem"]: st.image(dados["imagem"], width=150)
-                    st.write(f"**Nutri-Score:** {dados['nutriscore'].upper()}")
+                    if dados.get("imagem"): st.image(dados["imagem"], width=150)
+                    st.write(f"**Nutri-Score:** {dados.get('nutriscore', '?').upper()}")
                 with col2:
                     st.write(f"**Calorias (100g):** {dados.get('calorias', 0)} kcal")
                     st.write(f"**Açúcar (100g):** {dados.get('açucar', 0)} g")
                     st.write(f"**Gordura (100g):** {dados.get('gordura', 0)} g")
                     st.write(f"**Sal (100g):** {dados.get('sal', 0)} g")
-                
                 st.markdown("---")
                 st.markdown("### 💡 Recomendações Nutricionais")
                 dicas = gerar_dicas_nutricionais(dados)

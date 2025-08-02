@@ -1,121 +1,111 @@
-# utils/dados_google_fit.py
-import json
-import os
 import requests
-import time
-from datetime import datetime, timedelta
+from datetime import datetime
 
-def salvar_tokens(tokens, token_file):
-    with open(token_file, "w") as f:
-        json.dump(tokens, f, indent=4)
-    print("✅ Tokens do Google Fit salvos.")
+# Passos Diários
 
-def carregar_tokens(token_file):
-    if not os.path.exists(token_file): return None
-    try:
-        with open(token_file, "r") as f: return json.load(f)
-    except json.JSONDecodeError: return None
-
-def token_expirado(tokens):
-    if not tokens or "expires_at" not in tokens: return True
-    return time.time() >= tokens["expires_at"]
-
-def atualizar_token(client_id, client_secret, token_uri, token_file):
-    tokens = carregar_tokens(token_file)
-    if not tokens or "refresh_token" not in tokens: return None
-    print("🔄 Atualizando token do Google Fit...")
-    response = requests.post(token_uri, data={
-        'client_id': client_id,
-        'client_secret': client_secret,
-        'grant_type': 'refresh_token',
-        'refresh_token': tokens['refresh_token']
-    })
-    if response.status_code == 200:
-        novos_tokens = response.json()
-        tokens.update({
-            'access_token': novos_tokens.get('access_token'),
-            'expires_at': time.time() + novos_tokens.get('expires_in', 3600)
-        })
-        salvar_tokens(tokens, token_file)
-        return tokens
-    else:
-        print(f"❌ Erro ao atualizar token Google: {response.text}")
-        return None
-
-def obter_token_valido(client_id, client_secret, token_uri, token_file):
-    tokens = carregar_tokens(token_file)
-    if not tokens: return None
-    if token_expirado(tokens): return atualizar_token(client_id, client_secret, token_uri, token_file)
-    return tokens
-
-def fazer_requisicao(token, data_source_id, start_time, end_time):
+def obter_passos_diarios(token, inicio, fim):
     url = "https://www.googleapis.com/fitness/v1/users/me/dataset:aggregate"
     headers = {"Authorization": f"Bearer {token}"}
     body = {
-        "aggregateBy": [{"dataSourceId": data_source_id}],
+        "aggregateBy": [{"dataTypeName": "com.google.step_count.delta"}],
         "bucketByTime": {"durationMillis": 86400000},
-        "startTimeMillis": int(start_time.timestamp() * 1000),
-        "endTimeMillis": int(end_time.timestamp() * 1000)
+        "startTimeMillis": int(inicio.strftime("%s")) * 1000,
+        "endTimeMillis": int(fim.strftime("%s")) * 1000
     }
     try:
-        r = requests.post(url, headers=headers, json=body)
-        r.raise_for_status()
-        return r.json().get("bucket", [])
-    except requests.RequestException as e:
-        print(f"Erro na requisição ao Google Fit: {e}")
-        return []
+        response = requests.post(url, headers=headers, json=body)
+        data = response.json()
+        resultados = {}
+        for bucket in data.get("bucket", []):
+            data_inicio = datetime.fromtimestamp(int(bucket["startTimeMillis"]) / 1000).date()
+            total = sum(v.get("intVal", 0) for d in bucket.get("dataset", []) for p in d.get("point", []) for v in p.get("value", []))
+            resultados[data_inicio] = total
+        return resultados
+    except Exception as e:
+        print("Erro ao obter passos:", e)
+        return {}
 
-def obter_passos_diarios(token):
-    # ... (cole sua função obter_passos_diarios aqui) ...
-    return []
+# Batimentos Médios
 
-def obter_batimentos_medios(token):
-    # ... (cole sua função obter_batimentos_medios aqui) ...
-    return []
-
-def obter_sono(token):
-    # ... (cole sua função obter_sono aqui) ...
-    return []
-
-# --- NOVAS FUNÇÕES ADICIONADAS ---
-def obter_ultimo_peso(token):
-    """Busca a medição de peso mais recente dos últimos 30 dias."""
-    end = datetime.now()
-    start = end - timedelta(days=30)
-    data_source_id = "derived:com.google.weight:com.google.android.gms:merge_weight"
-    url = "https://www.googleapis.com/fitness/v1/users/me/dataSources/" + data_source_id + "/datasets"
-    dataset_id = f"{int(start.timestamp() * 1e9)}-{int(end.timestamp() * 1e9)}"
-    full_url = f"{url}/{dataset_id}"
-    headers = {"Authorization": f"Bearer {token['access_token']}"}
+def obter_batimentos_medios(token, inicio, fim):
+    url = "https://www.googleapis.com/fitness/v1/users/me/dataset:aggregate"
+    headers = {"Authorization": f"Bearer {token}"}
+    body = {
+        "aggregateBy": [{"dataTypeName": "com.google.heart_rate.bpm"}],
+        "bucketByTime": {"durationMillis": 86400000},
+        "startTimeMillis": int(inicio.strftime("%s")) * 1000,
+        "endTimeMillis": int(fim.strftime("%s")) * 1000
+    }
     try:
-        r = requests.get(full_url, headers=headers)
-        r.raise_for_status()
-        data = r.json()
-        if 'point' in data and data['point']:
-            ultimo_ponto = data['point'][-1]
-            peso = ultimo_ponto['value'][0]['fpVal']
-            return round(peso, 1)
-    except requests.RequestException as e:
-        print(f"Erro ao buscar peso do Google Fit: {e}")
+        response = requests.post(url, headers=headers, json=body)
+        data = response.json()
+        resultados = {}
+        for bucket in data.get("bucket", []):
+            data_inicio = datetime.fromtimestamp(int(bucket["startTimeMillis"]) / 1000).date()
+            total, count = 0, 0
+            for dataset in bucket["dataset"]:
+                for point in dataset.get("point", []):
+                    for val in point.get("value", []):
+                        total += val.get("fpVal", 0)
+                        count += 1
+            resultados[data_inicio] = round(total / count, 1) if count else 0
+        return resultados
+    except Exception as e:
+        print("Erro ao obter batimentos:", e)
+        return {}
+
+# Dados de Sono
+
+def obter_sono(token, inicio, fim):
+    url = "https://www.googleapis.com/fitness/v1/users/me/sessions"
+    headers = {"Authorization": f"Bearer {token}"}
+    params = {
+        "startTime": inicio.isoformat() + "T00:00:00Z",
+        "endTime": fim.isoformat() + "T23:59:59Z"
+    }
+    try:
+        response = requests.get(url, headers=headers, params=params)
+        data = response.json()
+        resultados = {}
+        for sessao in data.get("session", []):
+            if sessao.get("activityType") == 72:  # Sono
+                inicio_sessao = datetime.fromisoformat(sessao["startTimeMillis"]) if "startTimeMillis" in sessao else None
+                fim_sessao = datetime.fromisoformat(sessao["endTimeMillis"]) if "endTimeMillis" in sessao else None
+                if inicio_sessao and fim_sessao:
+                    duracao_horas = round((fim_sessao - inicio_sessao).total_seconds() / 3600, 2)
+                    dia = inicio_sessao.date()
+                    resultados[dia] = resultados.get(dia, 0) + duracao_horas
+        return resultados
+    except Exception as e:
+        print("Erro ao obter sono:", e)
+        return {}
+
+# Último peso e altura
+
+def obter_ultimo_peso(token):
+    url = "https://www.googleapis.com/fitness/v1/users/me/dataSources/derived:com.google.weight:com.google.android.gms:merge_weight/datasets/0-9999999999999"
+    headers = {"Authorization": f"Bearer {token}"}
+    try:
+        response = requests.get(url, headers=headers)
+        data = response.json()
+        pontos = data.get("point", [])
+        if pontos:
+            valor = pontos[-1].get("value", [{}])[0].get("fpVal")
+            return round(valor, 2) if valor else None
+    except Exception as e:
+        print("Erro ao obter peso:", e)
     return None
 
 def obter_ultima_altura(token):
-    """Busca a medição de altura mais recente dos últimos 365 dias."""
-    end = datetime.now()
-    start = end - timedelta(days=365)
-    data_source_id = "derived:com.google.height:com.google.android.gms:merge_height"
-    url = "https://www.googleapis.com/fitness/v1/users/me/dataSources/" + data_source_id + "/datasets"
-    dataset_id = f"{int(start.timestamp() * 1e9)}-{int(end.timestamp() * 1e9)}"
-    full_url = f"{url}/{dataset_id}"
-    headers = {"Authorization": f"Bearer {token['access_token']}"}
+    url = "https://www.googleapis.com/fitness/v1/users/me/dataSources/derived:com.google.height:com.google.android.gms:merge_height/datasets/0-9999999999999"
+    headers = {"Authorization": f"Bearer {token}"}
     try:
-        r = requests.get(full_url, headers=headers)
-        r.raise_for_status()
-        data = r.json()
-        if 'point' in data and data['point']:
-            ultimo_ponto = data['point'][-1]
-            altura = ultimo_ponto['value'][0]['fpVal']
-            return round(altura, 2)
-    except requests.RequestException as e:
-        print(f"Erro ao buscar altura do Google Fit: {e}")
+        response = requests.get(url, headers=headers)
+        data = response.json()
+        pontos = data.get("point", [])
+        if pontos:
+            valor = pontos[-1].get("value", [{}])[0].get("fpVal")
+            return round(valor, 2) if valor else None
+    except Exception as e:
+        print("Erro ao obter altura:", e)
     return None

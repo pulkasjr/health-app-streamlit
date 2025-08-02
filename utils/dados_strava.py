@@ -1,126 +1,80 @@
 # utils/dados_strava.py
+import requests
 import json
 import os
-import requests
-from datetime import datetime
-import polyline
+import time
 import folium
-
-# --- CONSTANTES DA API ---
-STRAVA_TOKEN_URL = "https://www.strava.com/oauth/token"
-STRAVA_API_URL = "https://www.strava.com/api/v3"
-
-# --- FUNÇÕES DE GERENCIAMENTO DE TOKEN ---
-def salvar_tokens(tokens, token_file):
-    with open(token_file, "w") as f:
-        json.dump(tokens, f, indent=4)
-    print("✅ Tokens do Strava salvos.")
-
-def carregar_tokens(token_file):
-    if not os.path.exists(token_file): return None
-    try:
-        with open(token_file, "r") as f: return json.load(f)
-    except json.JSONDecodeError: return None
-
-def token_expirado(tokens):
-    return int(tokens.get("expires_at", 0)) < int(datetime.utcnow().timestamp())
-
-def atualizar_token(client_id, client_secret, token_file):
-    tokens = carregar_tokens(token_file)
-    if not tokens or "refresh_token" not in tokens: return None
-    print("🔄 Atualizando token do Strava...")
-    response = requests.post(STRAVA_TOKEN_URL, data={
-        "client_id": client_id,
-        "client_secret": client_secret,
-        "grant_type": "refresh_token",
-        "refresh_token": tokens["refresh_token"]
-    })
-    if response.status_code == 200:
-        novos_tokens = response.json()
-        salvar_tokens(novos_tokens, token_file)
-        return novos_tokens
-    else:
-        print(f"❌ Erro ao atualizar token Strava: {response.text}")
-        return None
+import polyline
 
 def obter_token_valido(client_id, client_secret, token_file):
-    tokens = carregar_tokens(token_file)
-    if not tokens: return None
-    if token_expirado(tokens): return atualizar_token(client_id, client_secret, token_file)
-    return tokens
+    if not os.path.exists(token_file):
+        return None
 
-# --- FUNÇÕES DE BUSCA DE DADOS ---
-def buscar_ultimas_atividades(token, quantidade=5):
-    """Busca as últimas atividades e também retorna o ID do atleta."""
-    headers = {"Authorization": f"Bearer {token['access_token']}"}
-    url_atividades = f"{STRAVA_API_URL}/athlete/activities"
-    
-    atleta_id = None
-    atividades = []
-    
-    try:
-        r = requests.get(url_atividades, headers=headers, params={"per_page": quantidade})
-        r.raise_for_status()
-        dados = r.json()
-        
-        if dados:
-            # Pegamos o ID do atleta da primeira atividade encontrada
-            atleta_id = dados[0].get('athlete', {}).get('id')
-            
-            for atividade in dados:
-                atividades.append({
-                    "id": atividade["id"],
-                    "nome": atividade["name"],
-                    "distancia_km": round(atividade.get("distance", 0) / 1000, 2),
-                    "duracao_min": round(atividade.get("moving_time", 0) / 60),
-                    "mapa": atividade.get("map", {}).get("summary_polyline")
-                })
-        # A função agora retorna duas coisas: a lista de atividades e o ID do atleta
+    with open(token_file, "r") as f:
+        tokens = json.load(f)
+
+    if time.time() > tokens.get("expires_at", 0):
+        print("🔄 Atualizando token do Strava...")
+        response = requests.post("https://www.strava.com/oauth/token", data={
+            "client_id": client_id,
+            "client_secret": client_secret,
+            "grant_type": "refresh_token",
+            "refresh_token": tokens.get("refresh_token")
+        })
+        if response.ok:
+            new_tokens = response.json()
+            tokens.update({
+                "access_token": new_tokens["access_token"],
+                "expires_at": new_tokens["expires_at"],
+                "refresh_token": new_tokens.get("refresh_token", tokens["refresh_token"])
+            })
+            with open(token_file, "w") as f:
+                json.dump(tokens, f)
+            print("✅ Tokens do Strava salvos.")
+        else:
+            print("Erro ao atualizar token do Strava:", response.text)
+            return None
+    return tokens.get("access_token")
+
+def salvar_tokens(tokens, token_file):
+    with open(token_file, "w") as f:
+        json.dump(tokens, f)
+
+
+def buscar_ultimas_atividades(token):
+    headers = {"Authorization": f"Bearer {token}"}
+    r = requests.get("https://www.strava.com/api/v3/athlete/activities", headers=headers)
+    if r.status_code == 200:
+        atividades = []
+        for a in r.json():
+            atividades.append({
+                "id": a["id"],
+                "nome": a.get("name"),
+                "distancia_km": round(a.get("distance", 0) / 1000, 2),
+                "duracao_min": round(a.get("elapsed_time", 0) / 60, 1),
+                "mapa": a.get("map", {}).get("summary_polyline", "")
+            })
+        atleta_id = atividades[0].get("id") if atividades else None
         return atividades, atleta_id
-        
-    except requests.RequestException as e:
-        print(f"Erro ao buscar atividades do Strava: {e}")
-        return [], None
+    return [], None
 
 def gerar_mapa_atividade(atividade):
-    poly = atividade.get("mapa")
-    if not poly: return "<p>Sem dados de rota para esta atividade.</p>"
-    try:
-        coords = polyline.decode(poly)
-        if not coords: return "<p>Sem dados de rota para esta atividade.</p>"
-        
-        mapa = folium.Map(location=coords[0], zoom_start=13, tiles="CartoDB positron")
-        folium.PolyLine(coords, color="#fc4c02", weight=4, opacity=0.8).add_to(mapa)
-        
-        folium.Marker(location=coords[0], popup="Início", icon=folium.Icon(color="green", icon="play")).add_to(mapa)
-        folium.Marker(location=coords[-1], popup="Fim", icon=folium.Icon(color="red", icon="stop")).add_to(mapa)
+    if not atividade.get("mapa"):
+        return ""
+    coordenadas = polyline.decode(atividade["mapa"])
+    if not coordenadas:
+        return ""
+    m = folium.Map(location=coordenadas[0], zoom_start=13)
+    folium.PolyLine(coordenadas, color="blue", weight=5).add_to(m)
+    return m._repr_html_()
 
-        return mapa._repr_html_()
-    except Exception as e:
-        print(f"Erro ao gerar mapa: {e}")
-        return "<p>Erro ao gerar o mapa da rota.</p>"
-
-def buscar_estatisticas_atleta(token, atleta_id):
-    """Busca as estatísticas gerais (totais do ano) de um atleta."""
-    if not atleta_id:
-        return None
-    
-    headers = {"Authorization": f"Bearer {token['access_token']}"}
-    url = f"{STRAVA_API_URL}/athletes/{atleta_id}/stats"
-    
-    try:
-        r = requests.get(url, headers=headers)
-        r.raise_for_status()
+def buscar_estatisticas_atleta(token, atleta_id=None):
+    headers = {"Authorization": f"Bearer {token}"}
+    r = requests.get("https://www.strava.com/api/v3/athlete/stats", headers=headers)
+    if r.status_code == 200:
         stats = r.json()
-        
-        # Pegamos os totais do ano (year-to-date)
-        ytd_ride_totals = stats.get('ytd_ride_totals', {})
-        ytd_run_totals = stats.get('ytd_run_totals', {})
-        
         return {
-            "corrida_distancia_km": round(ytd_run_totals.get('distance', 0) / 1000, 1),
-            "pedalada_distancia_km": round(ytd_ride_totals.get('distance', 0) / 1000, 1)
+            "corrida_distancia_km": round(stats["ytd_run_totals"]["distance"] / 1000, 1),
+            "pedalada_distancia_km": round(stats["ytd_ride_totals"]["distance"] / 1000, 1)
         }
-    except requests.RequestException as e:
-        print(f"Erro ao buscar estatísticas do Strava: {e}")
-        return None
+    return None

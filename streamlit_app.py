@@ -18,12 +18,12 @@ from utils.dados_alimentos import buscar_info_alimento, gerar_dicas_nutricionais
 # ----- CONFIGURAÇÃO CENTRALIZADA (COLOQUE SUAS CREDENCIAIS CORRETAS AQUI) -----
 STRAVA_CLIENT_ID = "168833"
 STRAVA_CLIENT_SECRET = "6e774fa2c3c62214ea196fbcdf8162a00e58a882"
-STRAVA_REDIRECT_URI = "http://localhost:8501"
+SSTRAVA_REDIRECT_URI = "https://health-app-streamlit.onrender.com"
 STRAVA_TOKEN_FILE = "strava_tokens.json"
 
 GOOGLE_CLIENT_ID = "423426384359-m0pr10393ve0seul953bh63lhobqgl2v.apps.googleusercontent.com"
 GOOGLE_CLIENT_SECRET = "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"
-GOOGLE_REDIRECT_URI = "http://localhost:8501"
+GOOGLE_REDIRECT_URI = "https://health-app-streamlit.onrender.com"
 GOOGLE_TOKEN_FILE = "google_fit_tokens.json"
 GOOGLE_TOKEN_URI = 'https://oauth2.googleapis.com/token'
 GOOGLE_SCOPES = [

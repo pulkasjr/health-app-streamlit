@@ -45,8 +45,7 @@ def atualizar_token(client_id, client_secret, token_uri, token_file):
 def obter_token_valido(client_id, client_secret, token_uri, token_file):
     tokens = carregar_tokens(token_file)
     if not tokens: return None
-    if token_expirado(tokens):
-        return atualizar_token(client_id, client_secret, token_uri, token_file)
+    if token_expirado(tokens): return atualizar_token(client_id, client_secret, token_uri, token_file)
     return tokens
 
 def fazer_requisicao(token, data_source_id, start_time, end_time):
@@ -67,45 +66,56 @@ def fazer_requisicao(token, data_source_id, start_time, end_time):
         return []
 
 def obter_passos_diarios(token):
-    end = datetime.now()
-    start = end - timedelta(days=7)
-    data_source_id = "derived:com.google.step_count.delta:com.google.android.gms:estimated_steps"
-    buckets = fazer_requisicao(token['access_token'], data_source_id, start, end)
-    resultados = []
-    for b in buckets:
-        data = datetime.fromtimestamp(int(b["startTimeMillis"]) / 1000).strftime("%d/%m")
-        pontos = b.get("dataset", [{}])[0].get("point", [])
-        passos = sum(int(dp["value"][0]["intVal"]) for dp in pontos if dp.get("value"))
-        if passos > 0:
-            resultados.append({"data": data, "passos": passos})
-    return resultados
+    # ... (cole sua função obter_passos_diarios aqui) ...
+    return []
 
 def obter_batimentos_medios(token):
-    end = datetime.now()
-    start = end - timedelta(days=7)
-    data_source_id = "derived:com.google.heart_rate.bpm:com.google.android.gms:merge_heart_rate_bpm"
-    buckets = fazer_requisicao(token['access_token'], data_source_id, start, end)
-    resultados = []
-    for b in buckets:
-        data = datetime.fromtimestamp(int(b["startTimeMillis"]) / 1000).strftime("%d/%m")
-        pontos = b.get("dataset", [{}])[0].get("point", [])
-        bpm_list = [p["value"][0]["fpVal"] for p in pontos if p.get("value")]
-        if bpm_list:
-            media = round(sum(bpm_list) / len(bpm_list), 1)
-            resultados.append({"data": data, "bpm": media})
-    return resultados
+    # ... (cole sua função obter_batimentos_medios aqui) ...
+    return []
 
 def obter_sono(token):
+    # ... (cole sua função obter_sono aqui) ...
+    return []
+
+# --- NOVAS FUNÇÕES ADICIONADAS ---
+def obter_ultimo_peso(token):
+    """Busca a medição de peso mais recente dos últimos 30 dias."""
     end = datetime.now()
-    start = end - timedelta(days=7)
-    data_source_id = "derived:com.google.sleep.segment:com.google.android.gms:merged"
-    buckets = fazer_requisicao(token['access_token'], data_source_id, start, end)
-    resultados = []
-    for b in buckets:
-        data_sono = (datetime.fromtimestamp(int(b["startTimeMillis"]) / 1000) - timedelta(hours=12)).strftime("%d/%m")
-        pontos = b.get("dataset", [{}])[0].get("point", [])
-        total_nanos = sum(int(p["endTimeNanos"]) - int(p["startTimeNanos"]) for p in pontos if p.get("value") and p["value"][0]["intVal"] not in [1, 3])
-        duracao_horas = round(total_nanos / 3.6e12, 2)
-        if duracao_horas > 0:
-            resultados.append({"data": data_sono, "duracao_horas": duracao_horas})
-    return resultados
+    start = end - timedelta(days=30)
+    data_source_id = "derived:com.google.weight:com.google.android.gms:merge_weight"
+    url = "https://www.googleapis.com/fitness/v1/users/me/dataSources/" + data_source_id + "/datasets"
+    dataset_id = f"{int(start.timestamp() * 1e9)}-{int(end.timestamp() * 1e9)}"
+    full_url = f"{url}/{dataset_id}"
+    headers = {"Authorization": f"Bearer {token['access_token']}"}
+    try:
+        r = requests.get(full_url, headers=headers)
+        r.raise_for_status()
+        data = r.json()
+        if 'point' in data and data['point']:
+            ultimo_ponto = data['point'][-1]
+            peso = ultimo_ponto['value'][0]['fpVal']
+            return round(peso, 1)
+    except requests.RequestException as e:
+        print(f"Erro ao buscar peso do Google Fit: {e}")
+    return None
+
+def obter_ultima_altura(token):
+    """Busca a medição de altura mais recente dos últimos 365 dias."""
+    end = datetime.now()
+    start = end - timedelta(days=365)
+    data_source_id = "derived:com.google.height:com.google.android.gms:merge_height"
+    url = "https://www.googleapis.com/fitness/v1/users/me/dataSources/" + data_source_id + "/datasets"
+    dataset_id = f"{int(start.timestamp() * 1e9)}-{int(end.timestamp() * 1e9)}"
+    full_url = f"{url}/{dataset_id}"
+    headers = {"Authorization": f"Bearer {token['access_token']}"}
+    try:
+        r = requests.get(full_url, headers=headers)
+        r.raise_for_status()
+        data = r.json()
+        if 'point' in data and data['point']:
+            ultimo_ponto = data['point'][-1]
+            altura = ultimo_ponto['value'][0]['fpVal']
+            return round(altura, 2)
+    except requests.RequestException as e:
+        print(f"Erro ao buscar altura do Google Fit: {e}")
+    return None

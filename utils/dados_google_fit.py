@@ -1,111 +1,122 @@
-import requests
-from datetime import datetime
+# CÓDIGO FINAL E CORRETO PARA utils/dados_google_fit.py (SEM IMPORTAÇÃO CIRCULAR)
 
-# Passos Diários
+import time
+from datetime import datetime, timedelta
 
-def obter_passos_diarios(token, inicio, fim):
-    url = "https://www.googleapis.com/fitness/v1/users/me/dataset:aggregate"
-    headers = {"Authorization": f"Bearer {token}"}
-    body = {
-        "aggregateBy": [{"dataTypeName": "com.google.step_count.delta"}],
-        "bucketByTime": {"durationMillis": 86400000},
-        "startTimeMillis": int(inicio.strftime("%s")) * 1000,
-        "endTimeMillis": int(fim.strftime("%s")) * 1000
-    }
+# Esta biblioteca é usada para construir o serviço da API
+# Se não a tiver, instale com: pip install google-api-python-client
+from googleapiclient.discovery import build
+
+def build_service(credentials):
+    """Cria o objeto de serviço da API do Google Fitness."""
+    return build('fitness', 'v1', credentials=credentials)
+
+def obter_passos_diarios(credentials):
+    """Obtém a contagem de passos dos últimos 7 dias."""
+    service = build_service(credentials)
+    end_time_ms = int(time.time() * 1000)
+    start_time_ms = int((datetime.now() - timedelta(days=7)).timestamp() * 1000)
+
     try:
-        response = requests.post(url, headers=headers, json=body)
-        data = response.json()
-        resultados = {}
-        for bucket in data.get("bucket", []):
-            data_inicio = datetime.fromtimestamp(int(bucket["startTimeMillis"]) / 1000).date()
-            total = sum(v.get("intVal", 0) for d in bucket.get("dataset", []) for p in d.get("point", []) for v in p.get("value", []))
-            resultados[data_inicio] = total
-        return resultados
+        response = service.users().dataset().aggregate(
+            userId='me',
+            body={
+                'aggregateBy': [{'dataTypeName': 'com.google.step_count.delta', 'dataSourceId': 'derived:com.google.step_count.delta:com.google.android.gms:estimated_steps'}],
+                'bucketByTime': {'durationMillis': 86400000},
+                'startTimeMillis': start_time_ms,
+                'endTimeMillis': end_time_ms
+            }
+        ).execute()
+        
+        passos_dict = {}
+        for bucket in response.get('bucket', []):
+            points = bucket.get('dataset', [{}])[0].get('point', [])
+            if points and points[0].get('value', [{}])[0].get('intVal') is not None:
+                dia = datetime.fromtimestamp(int(points[0]['startTimeNanos']) / 1e9).strftime('%Y-%m-%d')
+                passos_dict[dia] = points[0]['value'][0]['intVal']
+        return passos_dict
     except Exception as e:
-        print("Erro ao obter passos:", e)
+        print(f"Erro ao obter passos diários: {e}")
         return {}
 
-# Batimentos Médios
+def obter_batimentos_medios(credentials):
+    """Obtém a média de batimentos cardíacos dos últimos 7 dias."""
+    service = build_service(credentials)
+    end_time_ms = int(time.time() * 1000)
+    start_time_ms = int((datetime.now() - timedelta(days=7)).timestamp() * 1000)
 
-def obter_batimentos_medios(token, inicio, fim):
-    url = "https://www.googleapis.com/fitness/v1/users/me/dataset:aggregate"
-    headers = {"Authorization": f"Bearer {token}"}
-    body = {
-        "aggregateBy": [{"dataTypeName": "com.google.heart_rate.bpm"}],
-        "bucketByTime": {"durationMillis": 86400000},
-        "startTimeMillis": int(inicio.strftime("%s")) * 1000,
-        "endTimeMillis": int(fim.strftime("%s")) * 1000
-    }
     try:
-        response = requests.post(url, headers=headers, json=body)
-        data = response.json()
-        resultados = {}
-        for bucket in data.get("bucket", []):
-            data_inicio = datetime.fromtimestamp(int(bucket["startTimeMillis"]) / 1000).date()
-            total, count = 0, 0
-            for dataset in bucket["dataset"]:
-                for point in dataset.get("point", []):
-                    for val in point.get("value", []):
-                        total += val.get("fpVal", 0)
-                        count += 1
-            resultados[data_inicio] = round(total / count, 1) if count else 0
-        return resultados
+        response = service.users().dataset().aggregate(
+            userId='me',
+            body={
+                'aggregateBy': [{'dataTypeName': 'com.google.heart_rate.bpm', 'dataSourceId': 'derived:com.google.heart_rate.bpm:com.google.android.gms:merge_heart_rate_bpm'}],
+                'bucketByTime': {'durationMillis': 86400000},
+                'startTimeMillis': start_time_ms,
+                'endTimeMillis': end_time_ms
+            }
+        ).execute()
+
+        bpm_dict = {}
+        for bucket in response.get('bucket', []):
+            points = bucket.get('dataset', [{}])[0].get('point', [])
+            if points and points[0].get('value', [{}])[0].get('fpVal') is not None:
+                dia = datetime.fromtimestamp(int(points[0]['startTimeNanos']) / 1e9).strftime('%Y-%m-%d')
+                bpm_dict[dia] = round(points[0]['value'][0]['fpVal'])
+        return bpm_dict
     except Exception as e:
-        print("Erro ao obter batimentos:", e)
+        print(f"Erro ao obter batimentos médios: {e}")
         return {}
 
-# Dados de Sono
-
-def obter_sono(token, inicio, fim):
-    url = "https://www.googleapis.com/fitness/v1/users/me/sessions"
-    headers = {"Authorization": f"Bearer {token}"}
-    params = {
-        "startTime": inicio.isoformat() + "T00:00:00Z",
-        "endTime": fim.isoformat() + "T23:59:59Z"
-    }
+def obter_sono(credentials):
+    """Obtém as horas de sono dos últimos 7 dias."""
+    service = build_service(credentials)
+    end_time_ns = int(time.time() * 1e9)
+    start_time_ns = int((datetime.now() - timedelta(days=7)).timestamp() * 1e9)
+    
     try:
-        response = requests.get(url, headers=headers, params=params)
-        data = response.json()
-        resultados = {}
-        for sessao in data.get("session", []):
-            if sessao.get("activityType") == 72:  # Sono
-                inicio_sessao = datetime.fromisoformat(sessao["startTimeMillis"]) if "startTimeMillis" in sessao else None
-                fim_sessao = datetime.fromisoformat(sessao["endTimeMillis"]) if "endTimeMillis" in sessao else None
-                if inicio_sessao and fim_sessao:
-                    duracao_horas = round((fim_sessao - inicio_sessao).total_seconds() / 3600, 2)
-                    dia = inicio_sessao.date()
-                    resultados[dia] = resultados.get(dia, 0) + duracao_horas
-        return resultados
+        response = service.users().sessions().list(userId='me', activityType=72, startTime=f"{datetime.fromtimestamp(start_time_ns/1e9).isoformat()}Z", endTime=f"{datetime.fromtimestamp(end_time_ns/1e9).isoformat()}Z").execute()
+        
+        sono_dict = {}
+        for session in response.get('session', []):
+            start_millis = int(session['startTimeMillis'])
+            end_millis = int(session['endTimeMillis'])
+            dia = datetime.fromtimestamp(start_millis / 1000).strftime('%Y-%m-%d')
+            duracao_horas = (end_millis - start_millis) / (1000 * 60 * 60)
+            sono_dict[dia] = sono_dict.get(dia, 0) + duracao_horas
+        
+        return {k: round(v, 1) for k, v in sono_dict.items()}
     except Exception as e:
-        print("Erro ao obter sono:", e)
+        print(f"Erro ao obter dados de sono: {e}")
         return {}
 
-# Último peso e altura
+def obter_ultimo_dado(service, data_source_id):
+    """Função auxiliar para buscar o ponto de dados mais recente."""
+    end_time_ns = int(time.time() * 1e9)
+    start_time_ns = int((datetime.now() - timedelta(days=365)).timestamp() * 1e9)
+    dataset_id = f"{start_time_ns}-{end_time_ns}"
 
-def obter_ultimo_peso(token):
-    url = "https://www.googleapis.com/fitness/v1/users/me/dataSources/derived:com.google.weight:com.google.android.gms:merge_weight/datasets/0-9999999999999"
-    headers = {"Authorization": f"Bearer {token}"}
     try:
-        response = requests.get(url, headers=headers)
-        data = response.json()
-        pontos = data.get("point", [])
-        if pontos:
-            valor = pontos[-1].get("value", [{}])[0].get("fpVal")
-            return round(valor, 2) if valor else None
+        response = service.users().dataSources().datasets().get(userId='me', dataSourceId=data_source_id, datasetId=dataset_id).execute()
+        points = response.get('point', [])
+        return points[-1] if points else None
     except Exception as e:
-        print("Erro ao obter peso:", e)
+        print(f"Erro ao buscar último dado para {data_source_id}: {e}")
+        return None
+
+def obter_ultimo_peso(credentials):
+    """Busca o registro de peso mais recente."""
+    service = build_service(credentials)
+    data_source_id = "derived:com.google.weight:com.google.android.gms:merge_weight"
+    ultimo_dado = obter_ultimo_dado(service, data_source_id)
+    if ultimo_dado and 'value' in ultimo_dado and ultimo_dado['value']:
+        return ultimo_dado['value'][0].get('fpVal')
     return None
 
-def obter_ultima_altura(token):
-    url = "https://www.googleapis.com/fitness/v1/users/me/dataSources/derived:com.google.height:com.google.android.gms:merge_height/datasets/0-9999999999999"
-    headers = {"Authorization": f"Bearer {token}"}
-    try:
-        response = requests.get(url, headers=headers)
-        data = response.json()
-        pontos = data.get("point", [])
-        if pontos:
-            valor = pontos[-1].get("value", [{}])[0].get("fpVal")
-            return round(valor, 2) if valor else None
-    except Exception as e:
-        print("Erro ao obter altura:", e)
+def obter_ultima_altura(credentials):
+    """Busca o registro de altura mais recente."""
+    service = build_service(credentials)
+    data_source_id = "derived:com.google.height:com.google.android.gms:merge_height"
+    ultimo_dado = obter_ultimo_dado(service, data_source_id)
+    if ultimo_dado and 'value' in ultimo_dado and ultimo_dado['value']:
+        return ultimo_dado['value'][0].get('fpVal')
     return None

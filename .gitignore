@@ -1,9 +1,18 @@
-# Ignorar arquivos de token salvos
-strava_tokens.json
+# Arquivos de Segredos e Tokens
+# O Git vai ignorar todos os arquivos listados aqui
+client_secret.json
 google_fit_tokens.json
+strava_tokens.json
+secrets.toml
 
-# Ignorar nosso arquivo de configuração principal
-config.py
+# Arquivos de Banco de Dados
+*.db
+*.sqlite3
 
-# Ignorar pastas de cache do Python
+# Arquivos de Ambiente Python
 __pycache__/
+*.pyc
+.env*
+
+# Arquivos de Sistema
+.DS_Store

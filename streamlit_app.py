@@ -1,4 +1,4 @@
-# CÓDIGO FINAL, COMPLETO E COM OS ESCOPOS CORRETOS
+# CÓDIGO FINAL E COMPLETO PARA DEPLOY
 
 import streamlit as st
 import os
@@ -20,28 +20,32 @@ from utils.dados_alimentos import buscar_info_alimento, gerar_dicas_nutricionais
 # --- Configurações e Constantes ---
 st.set_page_config(page_title="Painel de Saúde", layout="wide")
 
-# --- Credenciais ---
-STRAVA_CLIENT_ID = "168833" # SUBSTITUA AQUI
-STRAVA_CLIENT_SECRET = "6e774fa2c3c62214ea196fbcdf8162a00e58a882" # SUBSTITUA AQUI
+# --- Credenciais (lidas a partir do ambiente do servidor) ---
+STRAVA_CLIENT_ID = os.getenv("STRAVA_CLIENT_ID")
+STRAVA_CLIENT_SECRET = os.getenv("STRAVA_CLIENT_SECRET")
 STRAVA_TOKEN_FILE = "strava_tokens.json"
+
 GOOGLE_CLIENT_SECRETS_FILE = "client_secret.json" 
 GOOGLE_TOKEN_FILE = "google_fit_tokens.json"
+GOOGLE_SCOPES = ['https://www.googleapis.com/auth/fitness.activity.read', 'https://www.googleapis.com/auth/fitness.body.read', 'https://www.googleapis.com/auth/fitness.heart_rate.read', 'https://www.googleapis.com/auth/fitness.sleep.read']
 
-# ESTA É A LISTA DE ESCOPOS COMPLETA E CORRETA
-GOOGLE_SCOPES = [
-    'https://www.googleapis.com/auth/fitness.activity.read',
-    'https://www.googleapis.com/auth/fitness.body.read',
-    'https://www.googleapis.com/auth/fitness.heart_rate.read',
-    'https://www.googleapis.com/auth/fitness.sleep.read'
-]
-
-REDIRECT_URI = "http://localhost:8501"
+# ===== A CORREÇÃO CRÍTICA PARA O DEPLOY ESTÁ AQUI =====
+# Verifica se está rodando no ambiente do Render
+if "RENDER" in os.environ:
+    # No Render, usa a URL pública fornecida automaticamente
+    REDIRECT_URI = os.environ.get('RENDER_EXTERNAL_URL')
+else:
+    # No seu computador, usa a URL local
+    REDIRECT_URI = "http://localhost:8501"
+# =======================================================
 
 # ==============================================================================
 # FUNÇÕES DE AUTENTICAÇÃO
 # ==============================================================================
 
 def gerenciar_autenticacao_strava_ui():
+    if not STRAVA_CLIENT_ID or not STRAVA_CLIENT_SECRET:
+        st.error("Credenciais do Strava não configuradas nas variáveis de ambiente do servidor."); return
     auth_code, auth_state = st.query_params.get("code"), st.query_params.get("state")
     if auth_code and auth_state == "strava":
         with st.spinner("Conectando ao Strava..."):
@@ -56,7 +60,7 @@ def gerenciar_autenticacao_strava_ui():
 
 def gerenciar_autenticacao_google_ui():
     if not os.path.exists(GOOGLE_CLIENT_SECRETS_FILE):
-        st.error(f"Arquivo de credenciais '{GOOGLE_CLIENT_SECRETS_FILE}' não encontrado."); return
+        st.error(f"Arquivo de credenciais '{GOOGLE_CLIENT_SECRETS_FILE}' não encontrado. Verifique a configuração do 'Secret File' no Render."); return
     flow = Flow.from_client_secrets_file(GOOGLE_CLIENT_SECRETS_FILE, scopes=GOOGLE_SCOPES, redirect_uri=REDIRECT_URI)
     auth_code, auth_state = st.query_params.get("code"), st.query_params.get("state")
     if auth_code and auth_state == "google":
@@ -77,6 +81,8 @@ tab_conexoes, tab_fit, tab_strava, tab_alimentos = st.tabs(["🚪 Conexões", "�
 
 with tab_conexoes:
     st.header("Gerencie suas Conexões")
+    st.write("Use esta aba para conectar ou desconectar suas contas.")
+    st.markdown("---")
     col1, col2 = st.columns(2)
     with col1:
         st.subheader("Google Fit")
@@ -100,10 +106,8 @@ with tab_fit:
                 creds.refresh(Request())
             
             with st.spinner("Buscando dados do Google Fit..."):
-                peso = obter_ultimo_peso(creds)
-                altura = obter_ultima_altura(creds)
-                passos = obter_passos_diarios(creds)
-                bpm = obter_batimentos_medios(creds)
+                peso = obter_ultimo_peso(creds); altura = obter_ultima_altura(creds)
+                passos = obter_passos_diarios(creds); bpm = obter_batimentos_medios(creds)
                 sono = obter_sono(creds)
             
             col1, col2 = st.columns(2)
@@ -125,7 +129,6 @@ with tab_fit:
             st.subheader("😴 Horas de Sono")
             if sono: st.area_chart(sono)
             else: st.info("Nenhum dado de sono encontrado.")
-
         except Exception as e:
             st.error(f"Ocorreu um erro ao carregar os dados do Google: {e}")
             st.warning("Tente desconectar e conectar novamente na aba 'Conexões'.")
@@ -172,7 +175,6 @@ with tab_alimentos:
             if dados.get("imagem"): st.image(dados.get("imagem"), width=200)
             st.write(f"**Nutri-Score:** {dados.get('nutriscore', '?').upper()} | **Grupo NOVA:** {dados.get('nova_group', '?')}")
             st.write(f"**Ingredientes:** {dados.get('ingredientes', 'Não listado')}")
-            
             st.subheader("💡 Dicas Nutricionais")
             dicas = gerar_dicas_nutricionais(dados)
             for dica in dicas: st.markdown(f"- {dica}")
